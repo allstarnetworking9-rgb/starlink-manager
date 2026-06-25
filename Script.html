@@ -1,0 +1,145 @@
+<script>
+
+function openCustomer(){
+
+document.getElementById("content").innerHTML=`
+
+<h2>Tambah Pelanggan</h2>
+
+Nama<br>
+<input id="nama"><br><br>
+
+No WA<br>
+<input id="wa"><br><br>
+
+Alamat<br>
+<input id="alamat"><br><br>
+
+Username<br>
+<input id="username"><br><br>
+
+Password<br>
+<input id="password"><br><br>
+
+<select id="paket">
+
+<br><br>
+
+Metode Bayar<br>
+
+<select id="metode">
+    <option>Transfer</option>
+    <option>Cash</option>
+</select>
+
+<br><br>
+
+<option>Basic</option>
+
+<option>Premium</option>
+
+</select>
+
+<br><br>
+
+<button onclick="saveCustomer()">
+
+Simpan
+
+</button>
+
+`;
+
+}
+
+function saveCustomer(){
+
+    const data = {
+
+        nama: document.getElementById("nama").value,
+
+        wa: document.getElementById("wa").value,
+
+        alamat: document.getElementById("alamat").value,
+
+        username: document.getElementById("username").value,
+
+        password: document.getElementById("password").value,
+
+        paket: document.getElementById("paket").value,
+
+        metode: document.getElementById("metode").value
+
+    };
+
+    google.script.run
+        .withSuccessHandler(function(res){
+
+            alert("Pelanggan berhasil ditambahkan\nID : " + res.id);
+
+        })
+        .addCustomer(data);
+
+}
+
+function loadCustomers(){
+
+    google.script.run
+        .withSuccessHandler(showCustomers)
+        .getCustomers();
+
+}
+
+function showCustomers(data){
+
+    let html = `
+    <h2>Daftar Pelanggan</h2>
+
+    <table border="1" width="100%" cellpadding="5">
+
+    <tr>
+
+        <th>ID</th>
+
+        <th>Nama</th>
+
+        <th>No WA</th>
+
+        <th>Paket</th>
+
+        <th>Expired</th>
+
+        <th>Status</th>
+
+    </tr>
+    `;
+
+    data.forEach(r=>{
+
+        html += `
+        <tr>
+
+            <td>${r[0]}</td>
+
+            <td>${r[1]}</td>
+
+            <td>${r[2]}</td>
+
+            <td>${r[6]}</td>
+
+            <td>${new Date(r[9]).toLocaleDateString()}</td>
+
+            <td>${r[10]}</td>
+
+        </tr>
+        `;
+
+    });
+
+    html += "</table>";
+
+    document.getElementById("content").innerHTML = html;
+
+}
+
+</script>
