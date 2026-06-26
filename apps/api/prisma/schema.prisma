@@ -6,3 +6,511 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum CustomerStatus {
+  ACTIVE
+  DISABLED
+  SUSPENDED
+  TERMINATED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  DISABLED
+  PENDING
+  TERMINATED
+}
+
+enum PaymentStatus {
+  PAID
+  VOID
+  REFUNDED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  UNPAID
+  PAID
+  OVERDUE
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  EWALLET
+  QRIS
+  OTHER
+}
+
+enum ReminderType {
+  H_MINUS_7
+  H_MINUS_3
+  H_MINUS_1
+  EXPIRED
+}
+
+enum ReminderStatus {
+  PENDING
+  QUEUED
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum WhatsappStatus {
+  PENDING
+  SENT
+  FAILED
+  DELIVERED
+  READ
+}
+
+enum MikrotikAction {
+  ENABLE_USER
+  DISABLE_USER
+  SYNC_PROFILE
+  TEST_CONNECTION
+}
+
+enum MikrotikStatus {
+  SUCCESS
+  FAILED
+}
+
+enum ActivityAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  PAYMENT
+  GENERATE_INVOICE
+  SEND_REMINDER
+  MIKROTIK_SYNC
+}
+
+model Role {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique @db.VarChar(50)
+  code        String   @unique @db.VarChar(50)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userRoles UserRole[]
+
+  @@map("roles")
+}
+
+model User {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fullName     String     @map("full_name") @db.VarChar(120)
+  username     String     @unique @db.VarChar(50)
+  email        String?    @unique @db.VarChar(120)
+  passwordHash String     @map("password_hash")
+  phone        String?    @db.VarChar(20)
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  userRoles              UserRole[]
+  createdCustomers       Customer[]             @relation("CustomerCreatedBy")
+  updatedCustomers       Customer[]             @relation("CustomerUpdatedBy")
+  createdPackages        Package[]              @relation("PackageCreatedBy")
+  updatedPackages        Package[]              @relation("PackageUpdatedBy")
+  createdSubscriptions   CustomerSubscription[] @relation("SubscriptionCreatedBy")
+  updatedSubscriptions   CustomerSubscription[] @relation("SubscriptionUpdatedBy")
+  createdInvoices        Invoice[]              @relation("InvoiceCreatedBy")
+  updatedInvoices        Invoice[]              @relation("InvoiceUpdatedBy")
+  receivedPayments       Payment[]              @relation("PaymentReceivedBy")
+  activityLogs           ActivityLog[]
+  createdSettingsRecords Setting[]              @relation("SettingCreatedBy")
+  updatedSettingsRecords Setting[]              @relation("SettingUpdatedBy")
+
+  @@index([status])
+  @@map("users")
+}
+
+model UserRole {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model Customer {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerCode   String         @unique @map("customer_code") @db.VarChar(30)
+  fullName       String         @map("full_name") @db.VarChar(150)
+  phone          String         @unique @db.VarChar(20)
+  email          String?        @db.VarChar(120)
+  address        String
+  identityNumber String?        @map("identity_number") @db.VarChar(50)
+  latitude       Decimal?       @db.Decimal(10, 7)
+  longitude      Decimal?       @db.Decimal(10, 7)
+  notes          String?
+  status         CustomerStatus @default(ACTIVE)
+  createdById    String?        @map("created_by") @db.Uuid
+  updatedById    String?        @map("updated_by") @db.Uuid
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?      @map("deleted_at") @db.Timestamptz(6)
+
+  createdBy        User?                  @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy        User?                  @relation("CustomerUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  subscriptions    CustomerSubscription[]
+  invoices         Invoice[]
+  payments         Payment[]
+  reminders        Reminder[]
+  whatsappLogs     WhatsappLog[]
+  mikrotikSyncLogs MikrotikSyncLog[]
+
+  @@index([status])
+  @@index([fullName])
+  @@map("customers")
+}
+
+model Package {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  packageCode      String    @unique @map("package_code") @db.VarChar(30)
+  name             String    @db.VarChar(120)
+  description      String?
+  price            Decimal   @db.Decimal(14, 2)
+  durationDays     Int       @map("duration_days")
+  speedLabel       String?   @map("speed_label") @db.VarChar(50)
+  bandwidthProfile String?   @map("bandwidth_profile") @db.VarChar(100)
+  isActive         Boolean   @default(true) @map("is_active")
+  createdById      String?   @map("created_by") @db.Uuid
+  updatedById      String?   @map("updated_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  createdBy        User?                  @relation("PackageCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy        User?                  @relation("PackageUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  subscriptions    CustomerSubscription[]
+  mikrotikProfiles MikrotikProfile[]
+
+  @@index([isActive])
+  @@map("packages")
+}
+
+model Router {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String    @db.VarChar(120)
+  host              String    @db.VarChar(255)
+  port              Int       @default(8728)
+  username          String    @db.VarChar(100)
+  passwordEncrypted String    @map("password_encrypted")
+  location          String?   @db.VarChar(150)
+  isActive          Boolean   @default(true) @map("is_active")
+  lastConnectedAt   DateTime? @map("last_connected_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  mikrotikProfiles MikrotikProfile[]
+  subscriptions    CustomerSubscription[]
+  mikrotikSyncLogs MikrotikSyncLog[]
+
+  @@index([isActive])
+  @@map("routers")
+}
+
+model MikrotikProfile {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  routerId    String   @map("router_id") @db.Uuid
+  packageId   String   @map("package_id") @db.Uuid
+  profileName String   @map("profile_name") @db.VarChar(120)
+  serviceType String?  @map("service_type") @db.VarChar(50)
+  rateLimit   String?  @map("rate_limit") @db.VarChar(100)
+  addressPool String?  @map("address_pool") @db.VarChar(120)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  router        Router                 @relation(fields: [routerId], references: [id], onDelete: Cascade)
+  package       Package                @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  subscriptions CustomerSubscription[]
+
+  @@unique([routerId, packageId])
+  @@index([routerId])
+  @@index([packageId])
+  @@map("mikrotik_profiles")
+}
+
+model CustomerSubscription {
+  id                   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId           String             @map("customer_id") @db.Uuid
+  packageId            String             @map("package_id") @db.Uuid
+  routerId             String?            @map("router_id") @db.Uuid
+  mikrotikProfileId    String?            @map("mikrotik_profile_id") @db.Uuid
+  usernamePppoe        String?            @unique @map("username_pppoe") @db.VarChar(100)
+  passwordPppoe        String?            @map("password_pppoe")
+  packageNameSnapshot  String             @map("package_name_snapshot") @db.VarChar(120)
+  packagePriceSnapshot Decimal            @map("package_price_snapshot") @db.Decimal(14, 2)
+  speedSnapshot        String?            @map("speed_snapshot") @db.VarChar(50)
+  durationDaysSnapshot Int                @map("duration_days_snapshot")
+  installDate          DateTime           @map("install_date") @db.Date
+  billingDay           Int                @map("billing_day")
+  lastPaymentDate      DateTime?          @map("last_payment_date") @db.Date
+  expiredDate          DateTime           @map("expired_date") @db.Date
+  status               SubscriptionStatus
+  isCurrent            Boolean            @default(true) @map("is_current")
+  terminatedAt         DateTime?          @map("terminated_at") @db.Timestamptz(6)
+  terminationReason    String?            @map("termination_reason")
+  createdById          String?            @map("created_by") @db.Uuid
+  updatedById          String?            @map("updated_by") @db.Uuid
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer         Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  package          Package           @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  router           Router?           @relation(fields: [routerId], references: [id], onDelete: SetNull)
+  mikrotikProfile  MikrotikProfile?  @relation(fields: [mikrotikProfileId], references: [id], onDelete: SetNull)
+  createdBy        User?             @relation("SubscriptionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy        User?             @relation("SubscriptionUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  invoices         Invoice[]
+  payments         Payment[]
+  reminders        Reminder[]
+  mikrotikSyncLogs MikrotikSyncLog[]
+
+  @@index([customerId])
+  @@index([packageId])
+  @@index([routerId])
+  @@index([mikrotikProfileId])
+  @@index([status])
+  @@index([expiredDate])
+  @@index([customerId, isCurrent])
+  @@map("customer_subscriptions")
+}
+
+model Invoice {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invoiceNumber  String        @unique @map("invoice_number") @db.VarChar(50)
+  customerId     String        @map("customer_id") @db.Uuid
+  subscriptionId String?       @map("subscription_id") @db.Uuid
+  issueDate      DateTime      @map("issue_date") @db.Date
+  dueDate        DateTime      @map("due_date") @db.Date
+  paidDate       DateTime?     @map("paid_date") @db.Timestamptz(6)
+  subtotal       Decimal       @default(0) @db.Decimal(14, 2)
+  discountAmount Decimal       @default(0) @map("discount_amount") @db.Decimal(14, 2)
+  taxAmount      Decimal       @default(0) @map("tax_amount") @db.Decimal(14, 2)
+  totalAmount    Decimal       @map("total_amount") @db.Decimal(14, 2)
+  status         InvoiceStatus @default(UNPAID)
+  pdfFilePath    String?       @map("pdf_file_path")
+  pdfGeneratedAt DateTime?     @map("pdf_generated_at") @db.Timestamptz(6)
+  notes          String?
+  createdById    String?       @map("created_by") @db.Uuid
+  updatedById    String?       @map("updated_by") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer     Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  subscription CustomerSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  createdBy    User?                 @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy    User?                 @relation("InvoiceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  items        InvoiceItem[]
+  payments     Payment[]
+  reminders    Reminder[]
+
+  @@index([customerId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([issueDate])
+  @@index([dueDate])
+  @@index([status, dueDate])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invoiceId   String   @map("invoice_id") @db.Uuid
+  itemName    String   @map("item_name") @db.VarChar(150)
+  description String?
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @map("unit_price") @db.Decimal(14, 2)
+  totalPrice  Decimal  @map("total_price") @db.Decimal(14, 2)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+model Payment {
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentNumber      String        @unique @map("payment_number") @db.VarChar(50)
+  invoiceId          String?       @map("invoice_id") @db.Uuid
+  customerId         String        @map("customer_id") @db.Uuid
+  subscriptionId     String?       @map("subscription_id") @db.Uuid
+  paymentDate        DateTime      @map("payment_date") @db.Timestamptz(6)
+  billingPeriodStart DateTime?     @map("billing_period_start") @db.Date
+  billingPeriodEnd   DateTime?     @map("billing_period_end") @db.Date
+  amount             Decimal       @db.Decimal(14, 2)
+  paymentMethod      PaymentMethod @map("payment_method")
+  paymentReference   String?       @map("payment_reference") @db.VarChar(100)
+  status             PaymentStatus @default(PAID)
+  receivedById       String?       @map("received_by") @db.Uuid
+  notes              String?
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  invoice      Invoice?              @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  customer     Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  subscription CustomerSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  receivedBy   User?                 @relation("PaymentReceivedBy", fields: [receivedById], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([customerId])
+  @@index([subscriptionId])
+  @@index([paymentDate])
+  @@index([status])
+  @@map("payments")
+}
+
+model Reminder {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId     String         @map("customer_id") @db.Uuid
+  subscriptionId String         @map("subscription_id") @db.Uuid
+  invoiceId      String?        @map("invoice_id") @db.Uuid
+  reminderType   ReminderType   @map("reminder_type")
+  scheduledAt    DateTime       @map("scheduled_at") @db.Timestamptz(6)
+  sentAt         DateTime?      @map("sent_at") @db.Timestamptz(6)
+  status         ReminderStatus @default(PENDING)
+  channel        String         @default("WHATSAPP") @db.VarChar(30)
+  messageContent String         @map("message_content")
+  failureReason  String?        @map("failure_reason")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer     Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  subscription CustomerSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  invoice      Invoice?             @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  whatsappLogs WhatsappLog[]
+
+  @@index([customerId])
+  @@index([subscriptionId])
+  @@index([invoiceId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("reminders")
+}
+
+model WhatsappLog {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reminderId        String?        @map("reminder_id") @db.Uuid
+  customerId        String?        @map("customer_id") @db.Uuid
+  destinationNumber String         @map("destination_number") @db.VarChar(20)
+  messageContent    String         @map("message_content")
+  providerName      String?        @map("provider_name") @db.VarChar(100)
+  providerMessageId String?        @map("provider_message_id") @db.VarChar(150)
+  status            WhatsappStatus @default(PENDING)
+  responsePayload   Json?          @map("response_payload")
+  sentAt            DateTime?      @map("sent_at") @db.Timestamptz(6)
+  deliveredAt       DateTime?      @map("delivered_at") @db.Timestamptz(6)
+  failedAt          DateTime?      @map("failed_at") @db.Timestamptz(6)
+  failureReason     String?        @map("failure_reason")
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  reminder Reminder? @relation(fields: [reminderId], references: [id], onDelete: SetNull)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([reminderId])
+  @@index([customerId])
+  @@index([status])
+  @@map("whatsapp_logs")
+}
+
+model MikrotikSyncLog {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  routerId        String         @map("router_id") @db.Uuid
+  customerId      String?        @map("customer_id") @db.Uuid
+  subscriptionId  String?        @map("subscription_id") @db.Uuid
+  action          MikrotikAction
+  status          MikrotikStatus
+  requestPayload  Json?          @map("request_payload")
+  responsePayload Json?          @map("response_payload")
+  errorMessage    String?        @map("error_message")
+  executedAt      DateTime       @default(now()) @map("executed_at") @db.Timestamptz(6)
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  router       Router                @relation(fields: [routerId], references: [id], onDelete: Cascade)
+  customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  subscription CustomerSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([routerId])
+  @@index([customerId])
+  @@index([subscriptionId])
+  @@index([action])
+  @@index([status])
+  @@index([executedAt])
+  @@map("mikrotik_sync_logs")
+}
+
+model Setting {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyName         String   @map("company_name") @db.VarChar(150)
+  companyAddress      String   @map("company_address")
+  companyPhone        String?  @map("company_phone") @db.VarChar(20)
+  companyWhatsapp     String?  @map("company_whatsapp") @db.VarChar(20)
+  companyEmail        String?  @map("company_email") @db.VarChar(120)
+  logoFilePath        String?  @map("logo_file_path")
+  defaultReminderDays Int      @default(7) @map("default_reminder_days")
+  currencyCode        String   @default("IDR") @map("currency_code") @db.VarChar(10)
+  invoicePrefix       String   @default("INV") @map("invoice_prefix") @db.VarChar(20)
+  paymentPrefix       String   @default("PAY") @map("payment_prefix") @db.VarChar(20)
+  customerPrefix      String   @default("CUS") @map("customer_prefix") @db.VarChar(20)
+  createdById         String?  @map("created_by") @db.Uuid
+  updatedById         String?  @map("updated_by") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy User? @relation("SettingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User? @relation("SettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("settings")
+}
+
+model ActivityLog {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String?        @map("user_id") @db.Uuid
+  action      ActivityAction
+  module      String         @db.VarChar(50)
+  entityName  String         @map("entity_name") @db.VarChar(50)
+  entityId    String?        @map("entity_id") @db.Uuid
+  description String
+  oldData     Json?          @map("old_data")
+  newData     Json?          @map("new_data")
+  ipAddress   String?        @map("ip_address") @db.Inet
+  userAgent   String?        @map("user_agent")
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([module])
+  @@index([entityName, entityId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}

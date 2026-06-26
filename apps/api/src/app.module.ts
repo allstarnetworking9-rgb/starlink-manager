@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { resolve } from "node:path";
 import { appConfig, databaseConfig, validateEnvironment } from "./config";
 import { PrismaModule } from "./database/prisma.module";
 import { MikrotikIntegrationModule } from "./integrations/mikrotik/mikrotik-integration.module";
@@ -26,6 +27,10 @@ import { UsersModule } from "./modules/users/users.module";
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
+      envFilePath: [
+        resolve(process.cwd(), ".env"),
+        resolve(process.cwd(), "../../.env")
+      ],
       load: [appConfig, databaseConfig],
       validate: validateEnvironment
     }),
