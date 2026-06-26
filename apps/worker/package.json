@@ -1,0 +1,24 @@
+{
+  "name": "@starlink-manager-pro/worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "lint": "echo \"Lint worker belum diaktifkan\"",
+    "test": "echo \"Test worker belum diaktifkan\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "echo \"Format worker belum diaktifkan\"",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@starlink-manager-pro/config": "workspace:*",
+    "@starlink-manager-pro/utils": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}

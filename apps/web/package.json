@@ -1,0 +1,30 @@
+{
+  "name": "@starlink-manager-pro/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "echo \"Lint web belum diaktifkan\"",
+    "test": "echo \"Test web belum diaktifkan\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "echo \"Format web belum diaktifkan\"",
+    "clean": "rm -rf .next dist"
+  },
+  "dependencies": {
+    "@starlink-manager-pro/config": "workspace:*",
+    "@starlink-manager-pro/types": "workspace:*",
+    "@starlink-manager-pro/ui": "workspace:*",
+    "@starlink-manager-pro/utils": "workspace:*",
+    "next": "^15.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.1",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.6.3"
+  }
+}
