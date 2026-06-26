@@ -4,7 +4,7 @@ function showDashboard() {
 
   return template
     .evaluate()
-    .setTitle("Starlink Manager");
+    .setTitle("STARLINK MANAGER PRO");
 
 }
 

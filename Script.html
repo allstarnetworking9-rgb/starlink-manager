@@ -1,145 +1,705 @@
 <script>
-
-function openCustomer(){
-
-document.getElementById("content").innerHTML=`
-
-<h2>Tambah Pelanggan</h2>
-
-Nama<br>
-<input id="nama"><br><br>
-
-No WA<br>
-<input id="wa"><br><br>
-
-Alamat<br>
-<input id="alamat"><br><br>
-
-Username<br>
-<input id="username"><br><br>
-
-Password<br>
-<input id="password"><br><br>
-
-<select id="paket">
-
-<br><br>
-
-Metode Bayar<br>
-
-<select id="metode">
-    <option>Transfer</option>
-    <option>Cash</option>
-</select>
-
-<br><br>
-
-<option>Basic</option>
-
-<option>Premium</option>
-
-</select>
-
-<br><br>
-
-<button onclick="saveCustomer()">
-
-Simpan
-
-</button>
-
-`;
-
-}
-
-function saveCustomer(){
-
-    const data = {
-
-        nama: document.getElementById("nama").value,
-
-        wa: document.getElementById("wa").value,
-
-        alamat: document.getElementById("alamat").value,
-
-        username: document.getElementById("username").value,
-
-        password: document.getElementById("password").value,
-
-        paket: document.getElementById("paket").value,
-
-        metode: document.getElementById("metode").value
-
-    };
-
-    google.script.run
-        .withSuccessHandler(function(res){
-
-            alert("Pelanggan berhasil ditambahkan\nID : " + res.id);
-
-        })
-        .addCustomer(data);
-
-}
-
-function loadCustomers(){
-
-    google.script.run
-        .withSuccessHandler(showCustomers)
-        .getCustomers();
-
-}
-
-function showCustomers(data){
-
-    let html = `
-    <h2>Daftar Pelanggan</h2>
-
-    <table border="1" width="100%" cellpadding="5">
-
-    <tr>
-
-        <th>ID</th>
-
-        <th>Nama</th>
-
-        <th>No WA</th>
-
-        <th>Paket</th>
-
-        <th>Expired</th>
-
-        <th>Status</th>
-
-    </tr>
-    `;
-
-    data.forEach(r=>{
-
-        html += `
-        <tr>
-
-            <td>${r[0]}</td>
-
-            <td>${r[1]}</td>
-
-            <td>${r[2]}</td>
-
-            <td>${r[6]}</td>
-
-            <td>${new Date(r[9]).toLocaleDateString()}</td>
-
-            <td>${r[10]}</td>
-
-        </tr>
-        `;
-
-    });
-
-    html += "</table>";
-
-    document.getElementById("content").innerHTML = html;
-
-}
-
+  const CustomerApp = {
+    state: {
+      customers: [],
+      packages: [],
+      statuses: [],
+      pagination: {
+        page: 1,
+        pageSize: 10,
+        totalItems: 0,
+        totalPages: 1,
+        hasPrevious: false,
+        hasNext: false
+      },
+      summary: {
+        total: 0,
+        active: 0,
+        disabled: 0,
+        expired: 0
+      },
+      search: "",
+      currentMode: "create",
+      selectedCustomerId: ""
+    },
+
+    refs: {},
+    modals: {},
+    toast: null,
+    searchDebounce: null,
+
+    init: function () {
+      this.cacheDom();
+      this.bindEvents();
+      this.setupBootstrap();
+      this.applyTodayDefaults();
+      this.loadBootstrapData();
+    },
+
+    cacheDom: function () {
+      this.refs.loadingOverlay = document.getElementById("loadingOverlay");
+      this.refs.loadingText = document.getElementById("loadingText");
+      this.refs.toast = document.getElementById("appToast");
+      this.refs.toastBody = document.getElementById("appToastBody");
+      this.refs.customerTableBody = document.getElementById("customerTableBody");
+      this.refs.customerEmptyState = document.getElementById("customerEmptyState");
+      this.refs.customerPagination = document.getElementById("customerPagination");
+      this.refs.customerPaginationMeta = document.getElementById("customerPaginationMeta");
+      this.refs.customerSearchInput = document.getElementById("customerSearchInput");
+      this.refs.customerPageSize = document.getElementById("customerPageSize");
+      this.refs.customerPackageSuggestions = document.getElementById("customerPackageSuggestions");
+      this.refs.summaryTotalCustomers = document.getElementById("summaryTotalCustomers");
+      this.refs.summaryActiveCustomers = document.getElementById("summaryActiveCustomers");
+      this.refs.summaryDisabledCustomers = document.getElementById("summaryDisabledCustomers");
+      this.refs.summaryExpiredCustomers = document.getElementById("summaryExpiredCustomers");
+      this.refs.customerModal = document.getElementById("customerModal");
+      this.refs.customerModalTitle = document.getElementById("customerModalTitle");
+      this.refs.customerModalKicker = document.getElementById("customerModalKicker");
+      this.refs.customerForm = document.getElementById("customerForm");
+      this.refs.customerId = document.getElementById("customerId");
+      this.refs.customerName = document.getElementById("customerName");
+      this.refs.customerPhone = document.getElementById("customerPhone");
+      this.refs.customerAddress = document.getElementById("customerAddress");
+      this.refs.customerUsername = document.getElementById("customerUsername");
+      this.refs.customerPassword = document.getElementById("customerPassword");
+      this.refs.customerPackageName = document.getElementById("customerPackageName");
+      this.refs.customerPackagePrice = document.getElementById("customerPackagePrice");
+      this.refs.customerPackageDuration = document.getElementById("customerPackageDuration");
+      this.refs.customerInstallDate = document.getElementById("customerInstallDate");
+      this.refs.customerPaymentDate = document.getElementById("customerPaymentDate");
+      this.refs.customerExpiredDate = document.getElementById("customerExpiredDate");
+      this.refs.customerStatus = document.getElementById("customerStatus");
+      this.refs.saveCustomerButton = document.getElementById("saveCustomerButton");
+      this.refs.deleteCustomerModal = document.getElementById("deleteCustomerModal");
+      this.refs.deleteCustomerSummary = document.getElementById("deleteCustomerSummary");
+      this.refs.confirmDeleteCustomerButton = document.getElementById("confirmDeleteCustomerButton");
+      this.refs.openAddCustomerButton = document.getElementById("openAddCustomerButton");
+      this.refs.refreshCustomersButton = document.getElementById("refreshCustomersButton");
+    },
+
+    bindEvents: function () {
+      const self = this;
+
+      this.refs.openAddCustomerButton.addEventListener("click", function () {
+        self.openCreateModal();
+      });
+
+      this.refs.refreshCustomersButton.addEventListener("click", function () {
+        self.loadCustomers();
+      });
+
+      this.refs.customerSearchInput.addEventListener("input", function (event) {
+        clearTimeout(self.searchDebounce);
+        self.searchDebounce = setTimeout(function () {
+          self.state.search = event.target.value.trim();
+          self.loadCustomers(1);
+        }, 350);
+      });
+
+      this.refs.customerPageSize.addEventListener("change", function (event) {
+        self.state.pagination.pageSize = Number(event.target.value);
+        self.loadCustomers(1);
+      });
+
+      this.refs.customerTableBody.addEventListener("click", function (event) {
+        const trigger = event.target.closest("[data-action]");
+
+        if (!trigger) {
+          return;
+        }
+
+        const action = trigger.getAttribute("data-action");
+        const customerId = trigger.getAttribute("data-customer-id");
+
+        if (action === "edit") {
+          self.openEditModal(customerId);
+        }
+
+        if (action === "delete") {
+          self.openDeleteModal(customerId);
+        }
+      });
+
+      this.refs.customerPagination.addEventListener("click", function (event) {
+        const trigger = event.target.closest("[data-page]");
+
+        if (!trigger || trigger.classList.contains("disabled")) {
+          return;
+        }
+
+        const nextPage = Number(trigger.getAttribute("data-page"));
+
+        if (nextPage > 0 && nextPage !== self.state.pagination.page) {
+          self.loadCustomers(nextPage);
+        }
+      });
+
+      this.refs.saveCustomerButton.addEventListener("click", function () {
+        self.submitCustomerForm();
+      });
+
+      this.refs.confirmDeleteCustomerButton.addEventListener("click", function () {
+        self.confirmDeleteCustomer();
+      });
+
+      this.refs.customerPackageName.addEventListener("change", function () {
+        self.applyPackagePreset();
+      });
+
+      this.refs.customerPaymentDate.addEventListener("change", function () {
+        self.syncExpiredDate();
+      });
+
+      this.refs.customerInstallDate.addEventListener("change", function () {
+        if (!self.refs.customerPaymentDate.value) {
+          self.refs.customerPaymentDate.value = self.refs.customerInstallDate.value;
+        }
+
+        self.syncExpiredDate();
+      });
+
+      this.refs.customerForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+        self.submitCustomerForm();
+      });
+
+      Array.prototype.slice.call(document.querySelectorAll("[data-coming-soon]")).forEach(function (button) {
+        button.addEventListener("click", function () {
+          self.showToast("This module is not built yet in the current phase.", "info");
+        });
+      });
+    },
+
+    setupBootstrap: function () {
+      this.toast = new bootstrap.Toast(this.refs.toast, {
+        delay: 3200
+      });
+      this.modals.customer = new bootstrap.Modal(this.refs.customerModal);
+      this.modals.deleteCustomer = new bootstrap.Modal(this.refs.deleteCustomerModal);
+    },
+
+    api: function (methodName, payload) {
+      return new Promise(function (resolve, reject) {
+        let runner = google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(function (error) {
+            reject(new Error(error && error.message ? error.message : "Unknown server error."));
+          });
+
+        if (payload === undefined) {
+          runner[methodName]();
+          return;
+        }
+
+        runner[methodName](payload);
+      });
+    },
+
+    setLoading: function (visible, message) {
+      this.refs.loadingText.textContent = message || "Loading...";
+      this.refs.loadingOverlay.classList.toggle("d-none", !visible);
+    },
+
+    showToast: function (message, tone) {
+      this.refs.toast.classList.remove("toast-success", "toast-error", "toast-info");
+      this.refs.toast.classList.add(
+        tone === "error" ? "toast-error" : tone === "success" ? "toast-success" : "toast-info"
+      );
+      this.refs.toastBody.textContent = message;
+      this.toast.show();
+    },
+
+    escapeHtml: function (value) {
+      return String(value === null || value === undefined ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    },
+
+    formatCurrency: function (value) {
+      const amount = Number(value || 0);
+      return new Intl.NumberFormat("id-ID", {
+        style: "currency",
+        currency: "IDR",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(amount);
+    },
+
+    applyTodayDefaults: function () {
+      const today = new Date().toISOString().slice(0, 10);
+      this.refs.customerInstallDate.value = today;
+      this.refs.customerPaymentDate.value = today;
+      this.refs.customerExpiredDate.value = today;
+    },
+
+    setSummary: function (summary) {
+      this.refs.summaryTotalCustomers.textContent = summary.total || 0;
+      this.refs.summaryActiveCustomers.textContent = summary.active || 0;
+      this.refs.summaryDisabledCustomers.textContent = summary.disabled || 0;
+      this.refs.summaryExpiredCustomers.textContent = summary.expired || 0;
+    },
+
+    populateStatuses: function () {
+      const statusOptions = this.state.statuses.map(function (status) {
+        return '<option value="' + status + '">' + status + "</option>";
+      });
+      this.refs.customerStatus.innerHTML = statusOptions.join("");
+    },
+
+    populatePackageSuggestions: function () {
+      const optionsHtml = this.state.packages.map(function (pkg) {
+        return '<option value="' + CustomerApp.escapeHtml(pkg.packageName) + '"></option>';
+      });
+      this.refs.customerPackageSuggestions.innerHTML = optionsHtml.join("");
+    },
+
+    applyPackagePreset: function () {
+      const packageName = this.refs.customerPackageName.value.trim().toLowerCase();
+      const match = this.state.packages.find(function (pkg) {
+        return (pkg.packageName || "").toLowerCase() === packageName;
+      });
+
+      if (!match) {
+        this.refs.customerPackageDuration.value = "";
+        return;
+      }
+
+      this.refs.customerPackageDuration.value = match.duration || "";
+
+      if (!this.refs.customerPackagePrice.value || Number(this.refs.customerPackagePrice.value) === 0) {
+        this.refs.customerPackagePrice.value = match.price || 0;
+      }
+
+      this.syncExpiredDate();
+    },
+
+    parsePackageDuration: function (durationText) {
+      const normalized = String(durationText || "").trim();
+
+      if (!normalized) {
+        return { unit: "days", value: 30 };
+      }
+
+      if (/^\d+$/.test(normalized)) {
+        return { unit: "days", value: Number(normalized) };
+      }
+
+      const match = normalized.match(/(\d+)\s*(day|days|hari|month|months|bulan)/i);
+
+      if (!match) {
+        return { unit: "days", value: 30 };
+      }
+
+      const value = Number(match[1]);
+      const token = match[2].toLowerCase();
+
+      if (token === "month" || token === "months" || token === "bulan") {
+        return { unit: "months", value: value };
+      }
+
+      return { unit: "days", value: value };
+    },
+
+    syncExpiredDate: function () {
+      if (this.state.currentMode === "edit" && this.refs.customerExpiredDate.dataset.manual === "true") {
+        return;
+      }
+
+      const paymentDateValue = this.refs.customerPaymentDate.value || this.refs.customerInstallDate.value;
+
+      if (!paymentDateValue) {
+        return;
+      }
+
+      const duration = this.parsePackageDuration(this.refs.customerPackageDuration.value);
+      const date = new Date(paymentDateValue + "T00:00:00");
+
+      if (duration.unit === "months") {
+        date.setMonth(date.getMonth() + duration.value);
+      } else {
+        date.setDate(date.getDate() + duration.value);
+      }
+
+      this.refs.customerExpiredDate.value = date.toISOString().slice(0, 10);
+    },
+
+    loadBootstrapData: async function () {
+      try {
+        this.setLoading(true, "Loading customer module...");
+        const result = await this.api("getCustomerModuleBootstrap");
+
+        if (!result.success) {
+          throw new Error((result.errors || []).join(", ") || result.message);
+        }
+
+        this.state.packages = result.data.options.packages || [];
+        this.state.statuses = result.data.options.statuses || [];
+        this.state.pagination = result.data.customers.pagination || this.state.pagination;
+        this.state.pagination.pageSize = Number(this.state.pagination.pageSize || 10);
+        this.refs.customerPageSize.value = String(this.state.pagination.pageSize);
+
+        this.populateStatuses();
+        this.populatePackageSuggestions();
+        this.renderCustomerResponse(result.data.customers);
+      } catch (error) {
+        this.showToast(error.message || "Failed to load customer module.", "error");
+        this.renderTable([]);
+      } finally {
+        this.setLoading(false);
+      }
+    },
+
+    loadCustomers: async function (page) {
+      try {
+        this.setLoading(true, "Loading customers...");
+        const result = await this.api("getCustomers", {
+          page: page || this.state.pagination.page || 1,
+          pageSize: this.state.pagination.pageSize,
+          search: this.state.search
+        });
+
+        if (!result.success) {
+          throw new Error((result.errors || []).join(", ") || result.message);
+        }
+
+        this.renderCustomerResponse(result.data);
+      } catch (error) {
+        this.showToast(error.message || "Failed to load customers.", "error");
+      } finally {
+        this.setLoading(false);
+      }
+    },
+
+    renderCustomerResponse: function (payload) {
+      this.state.customers = payload.items || [];
+      this.state.pagination = payload.pagination || this.state.pagination;
+      this.state.summary = payload.summary || this.state.summary;
+      this.setSummary(this.state.summary);
+      this.renderTable(this.state.customers);
+      this.renderPagination();
+    },
+
+    renderTable: function (customers) {
+      if (!customers || customers.length === 0) {
+        this.refs.customerTableBody.innerHTML = "";
+        this.refs.customerEmptyState.classList.remove("d-none");
+        return;
+      }
+
+      this.refs.customerEmptyState.classList.add("d-none");
+      this.refs.customerTableBody.innerHTML = customers.map(this.renderRow.bind(this)).join("");
+    },
+
+    renderRow: function (customer) {
+      const statusClass = customer.status === "Active" ? "pill-status-active" : "pill-status-disabled";
+
+      return [
+        "<tr>",
+        '<td>',
+        '<div class="customer-name">' + this.escapeHtml(customer.name) + "</div>",
+        '<div class="customer-subcopy">' + this.escapeHtml(customer.id) + " • " + this.escapeHtml(customer.username) + "</div>",
+        "</td>",
+        '<td>',
+        '<div class="fw-semibold">' + this.escapeHtml(customer.phone) + "</div>",
+        '<div class="customer-subcopy">' + this.escapeHtml(customer.address) + "</div>",
+        "</td>",
+        '<td>',
+        '<div class="fw-semibold">' + this.escapeHtml(customer.packageName) + "</div>",
+        '<div class="customer-subcopy">' + this.formatCurrency(customer.packagePrice) + "</div>",
+        "</td>",
+        '<td>',
+        '<div class="fw-semibold">Paid: ' + this.escapeHtml(customer.paymentDate) + "</div>",
+        '<div class="customer-subcopy">Expires: ' + this.escapeHtml(customer.expiredDate) + "</div>",
+        "</td>",
+        '<td><span class="pill-status ' + statusClass + '">' + this.escapeHtml(customer.status) + "</span></td>",
+        '<td class="text-end">',
+        '<div class="row-actions justify-content-end">',
+        '<button class="row-action-btn" type="button" data-action="edit" data-customer-id="' + this.escapeHtml(customer.id) + '" aria-label="Edit customer">',
+        '<span class="material-symbols-outlined">edit</span>',
+        "</button>",
+        '<button class="row-action-btn row-action-delete" type="button" data-action="delete" data-customer-id="' + this.escapeHtml(customer.id) + '" aria-label="Delete customer">',
+        '<span class="material-symbols-outlined">delete</span>',
+        "</button>",
+        "</div>",
+        "</td>",
+        "</tr>"
+      ].join("");
+    },
+
+    renderPagination: function () {
+      const pagination = this.state.pagination;
+      const startItem = pagination.totalItems === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
+      const endItem = Math.min(pagination.page * pagination.pageSize, pagination.totalItems);
+
+      this.refs.customerPaginationMeta.textContent =
+        "Showing " + startItem + " to " + endItem + " of " + pagination.totalItems + " customers";
+
+      const pages = [];
+      const startPage = Math.max(1, pagination.page - 2);
+      const endPage = Math.min(pagination.totalPages, pagination.page + 2);
+
+      pages.push(this.renderPaginationButton("Previous", pagination.page - 1, !pagination.hasPrevious, false));
+
+      for (let pageNumber = startPage; pageNumber <= endPage; pageNumber += 1) {
+        pages.push(this.renderPaginationButton(String(pageNumber), pageNumber, false, pageNumber === pagination.page));
+      }
+
+      pages.push(this.renderPaginationButton("Next", pagination.page + 1, !pagination.hasNext, false));
+      this.refs.customerPagination.innerHTML = pages.join("");
+    },
+
+    renderPaginationButton: function (label, page, disabled, active) {
+      return [
+        '<li class="page-item' + (disabled ? " disabled" : "") + (active ? " active" : "") + '">',
+        '<button class="page-link" type="button" data-page="' + page + '"' + (disabled ? " tabindex=\"-1\"" : "") + ">",
+        this.escapeHtml(label),
+        "</button>",
+        "</li>"
+      ].join("");
+    },
+
+    openCreateModal: function () {
+      this.state.currentMode = "create";
+      this.state.selectedCustomerId = "";
+      this.refs.customerModalKicker.textContent = "Create Customer";
+      this.refs.customerModalTitle.textContent = "Add New Customer";
+      this.refs.saveCustomerButton.innerHTML =
+        '<span class="material-symbols-outlined">save</span><span>Save Customer</span>';
+      this.resetForm();
+      this.modals.customer.show();
+    },
+
+    openEditModal: async function (customerId) {
+      try {
+        this.setLoading(true, "Loading customer details...");
+        const result = await this.api("getCustomerById", customerId);
+
+        if (!result.success) {
+          throw new Error((result.errors || []).join(", ") || result.message);
+        }
+
+        this.state.currentMode = "edit";
+        this.state.selectedCustomerId = customerId;
+        this.refs.customerModalKicker.textContent = "Update Customer";
+        this.refs.customerModalTitle.textContent = "Edit Customer";
+        this.refs.saveCustomerButton.innerHTML =
+          '<span class="material-symbols-outlined">save_as</span><span>Update Customer</span>';
+        this.fillForm(result.data.customer);
+        this.modals.customer.show();
+      } catch (error) {
+        this.showToast(error.message || "Failed to load customer details.", "error");
+      } finally {
+        this.setLoading(false);
+      }
+    },
+
+    openDeleteModal: function (customerId) {
+      const customer = this.state.customers.find(function (item) {
+        return item.id === customerId;
+      });
+
+      this.state.selectedCustomerId = customerId;
+      this.refs.deleteCustomerSummary.innerHTML = customer
+        ? "<strong>" + this.escapeHtml(customer.name) + "</strong><br>" +
+          this.escapeHtml(customer.id) + " • " +
+          this.escapeHtml(customer.phone) + " • " +
+          this.escapeHtml(customer.packageName)
+        : this.escapeHtml(customerId);
+      this.modals.deleteCustomer.show();
+    },
+
+    resetForm: function () {
+      this.refs.customerForm.reset();
+      this.clearValidation();
+      this.refs.customerId.value = "";
+      this.refs.customerPackageDuration.value = "";
+      this.refs.customerExpiredDate.dataset.manual = "false";
+      this.populateStatuses();
+      this.applyTodayDefaults();
+      this.refs.customerStatus.value = "Active";
+    },
+
+    fillForm: function (customer) {
+      this.resetForm();
+      this.refs.customerId.value = customer.id || "";
+      this.refs.customerName.value = customer.name || "";
+      this.refs.customerPhone.value = customer.phone || "";
+      this.refs.customerAddress.value = customer.address || "";
+      this.refs.customerUsername.value = customer.username || "";
+      this.refs.customerPassword.value = customer.password || "";
+      this.refs.customerPackageName.value = customer.packageName || "";
+      this.refs.customerPackagePrice.value = customer.packagePrice || 0;
+      this.refs.customerInstallDate.value = customer.installDate || "";
+      this.refs.customerPaymentDate.value = customer.paymentDate || "";
+      this.refs.customerExpiredDate.value = customer.expiredDate || "";
+      this.refs.customerExpiredDate.dataset.manual = "true";
+      this.refs.customerStatus.value = customer.status || "Active";
+      this.applyPackagePreset();
+      this.refs.customerExpiredDate.dataset.manual = "true";
+    },
+
+    clearValidation: function () {
+      Array.prototype.slice.call(this.refs.customerForm.querySelectorAll(".is-invalid")).forEach(function (field) {
+        field.classList.remove("is-invalid");
+      });
+
+      Array.prototype.slice.call(this.refs.customerForm.querySelectorAll(".invalid-feedback")).forEach(function (field) {
+        field.textContent = "";
+      });
+    },
+
+    setFieldError: function (fieldId, message) {
+      const field = document.getElementById(fieldId);
+      const feedback = document.getElementById("error" + fieldId.charAt(0).toUpperCase() + fieldId.slice(1));
+
+      if (!field || !feedback) {
+        return;
+      }
+
+      field.classList.add("is-invalid");
+      feedback.textContent = message;
+    },
+
+    validateForm: function () {
+      this.clearValidation();
+
+      const values = this.getFormPayload();
+      const errors = [];
+
+      if (!values.name) {
+        errors.push({ field: "customerName", message: "Name is required." });
+      }
+
+      if (!/^[0-9+]{8,16}$/.test(values.phone)) {
+        errors.push({ field: "customerPhone", message: "Phone must be 8-16 digits and may include leading +." });
+      }
+
+      if (!values.address) {
+        errors.push({ field: "customerAddress", message: "Address is required." });
+      }
+
+      if (!/^[A-Za-z0-9._-]{4,32}$/.test(values.username)) {
+        errors.push({ field: "customerUsername", message: "Username must be 4-32 characters." });
+      }
+
+      if (!values.password) {
+        errors.push({ field: "customerPassword", message: "Password is required." });
+      }
+
+      if (!values.packageName) {
+        errors.push({ field: "customerPackageName", message: "Package is required." });
+      }
+
+      if (values.packagePrice === "" || Number(values.packagePrice) < 0) {
+        errors.push({ field: "customerPackagePrice", message: "Package Price must be zero or greater." });
+      }
+
+      if (!values.installDate) {
+        errors.push({ field: "customerInstallDate", message: "Install Date is required." });
+      }
+
+      if (!values.paymentDate) {
+        errors.push({ field: "customerPaymentDate", message: "Payment Date is required." });
+      }
+
+      if (!values.expiredDate) {
+        errors.push({ field: "customerExpiredDate", message: "Expired Date is required." });
+      }
+
+      if (values.paymentDate && values.expiredDate && values.expiredDate < values.paymentDate) {
+        errors.push({ field: "customerExpiredDate", message: "Expired Date must be the same as or after Payment Date." });
+      }
+
+      if (!values.status) {
+        errors.push({ field: "customerStatus", message: "Status is required." });
+      }
+
+      errors.forEach(function (error) {
+        CustomerApp.setFieldError(error.field, error.message);
+      });
+
+      return errors.length === 0;
+    },
+
+    getFormPayload: function () {
+      return {
+        id: this.refs.customerId.value.trim(),
+        name: this.refs.customerName.value.trim(),
+        phone: this.refs.customerPhone.value.trim().replace(/\s+/g, ""),
+        address: this.refs.customerAddress.value.trim(),
+        username: this.refs.customerUsername.value.trim(),
+        password: this.refs.customerPassword.value.trim(),
+        packageName: this.refs.customerPackageName.value.trim(),
+        packagePrice: this.refs.customerPackagePrice.value,
+        packageDuration: this.refs.customerPackageDuration.value,
+        installDate: this.refs.customerInstallDate.value,
+        paymentDate: this.refs.customerPaymentDate.value,
+        expiredDate: this.refs.customerExpiredDate.value,
+        status: this.refs.customerStatus.value
+      };
+    },
+
+    submitCustomerForm: async function () {
+      if (!this.validateForm()) {
+        this.showToast("Please fix the highlighted form errors.", "error");
+        return;
+      }
+
+      const payload = this.getFormPayload();
+      const isEdit = this.state.currentMode === "edit";
+
+      try {
+        this.setLoading(true, isEdit ? "Updating customer..." : "Creating customer...");
+        this.refs.saveCustomerButton.disabled = true;
+
+        const result = await this.api(isEdit ? "updateCustomer" : "createCustomer", payload);
+
+        if (!result.success) {
+          throw new Error((result.errors || []).join(", ") || result.message);
+        }
+
+        this.modals.customer.hide();
+        this.showToast(result.message || "Customer saved successfully.", "success");
+        this.loadCustomers(isEdit ? this.state.pagination.page : 1);
+      } catch (error) {
+        this.showToast(error.message || "Failed to save customer.", "error");
+      } finally {
+        this.refs.saveCustomerButton.disabled = false;
+        this.setLoading(false);
+      }
+    },
+
+    confirmDeleteCustomer: async function () {
+      if (!this.state.selectedCustomerId) {
+        return;
+      }
+
+      try {
+        this.setLoading(true, "Deleting customer...");
+        this.refs.confirmDeleteCustomerButton.disabled = true;
+
+        const result = await this.api("deleteCustomer", this.state.selectedCustomerId);
+
+        if (!result.success) {
+          throw new Error((result.errors || []).join(", ") || result.message);
+        }
+
+        this.modals.deleteCustomer.hide();
+        this.showToast(result.message || "Customer deleted successfully.", "success");
+        this.loadCustomers(this.state.pagination.page);
+      } catch (error) {
+        this.showToast(error.message || "Failed to delete customer.", "error");
+      } finally {
+        this.refs.confirmDeleteCustomerButton.disabled = false;
+        this.setLoading(false);
+      }
+    }
+  };
+
+  document.addEventListener("DOMContentLoaded", function () {
+    CustomerApp.init();
+  });
 </script>
